@@ -1,6 +1,6 @@
 'use strict';
 
-const { Plugin, ItemView, PluginSettingTab, Setting, MarkdownRenderer, requestUrl, Modal } = require('obsidian');
+const { Plugin, ItemView, PluginSettingTab, Setting, MarkdownRenderer, requestUrl, Modal, AbstractInputSuggest } = require('obsidian');
 
 const VIEW_TYPE = 'scroll-of-beasts';
 const DEFAULT_SETTINGS = { monsterFolders: [], useForgottenRealmsAPI: false };
@@ -65,7 +65,7 @@ class ScrollOfBeastsView extends ItemView {
             11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30];
 
         const parseCR = (cr) => {
-            const idx = CR_LABELS.indexOf(cr ?? "");
+            const idx = CR_LABELS.indexOf(cr != null ? String(cr) : "");
             return idx !== -1 ? CR_VALUES[idx] : -1;
         };
 
@@ -148,7 +148,7 @@ class ScrollOfBeastsView extends ItemView {
             const obj = entry[1];
             const baseName = getBaseName(name);
             const localPath = localMap.get(name.toLowerCase()) ?? localMap.get(baseName.toLowerCase()) ?? null;
-            const cr = obj?.cr ?? null;
+            const cr = obj?.cr != null && obj.cr !== "" ? String(obj.cr) : null;
             let rawType = obj?.type ?? null;
             let typeStr = null;
             if (rawType !== null) {
@@ -168,10 +168,52 @@ class ScrollOfBeastsView extends ItemView {
             if (cr !== null && cr !== "" && !bestiaryCRMap.has(baseNameLower)) bestiaryCRMap.set(baseNameLower, cr);
         }
 
+        const fmTypeStr = (type, subtype) => {
+            const t = type ? String(type).toLowerCase().trim() : null;
+            const s = subtype ? String(subtype).toLowerCase().trim() : null;
+            return t ? (s ? `${t} (${s})` : t) : null;
+        };
+        const fmCR = (cr) => cr != null ? String(cr) : null;
+        const fmSize = (size) => size ? String(size).toLowerCase().trim() : null;
+
         for (const file of localFiles) {
             const baseName = file.basename;
-            if (!groupMap.has(baseName) && !groupMap.has(getBaseName(baseName))) {
-                groupMap.set(baseName, [{ name: baseName, localPath: file.path }]);
+            const fm = app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+
+            if (Array.isArray(fm.monsters) && fm.monsters.length > 0) {
+                for (const m of fm.monsters) {
+                    const entryName = m.name ? String(m.name).trim() : baseName;
+                    const version = {
+                        name: entryName,
+                        localPath: file.path,
+                        cr: fmCR(m.cr),
+                        size: fmSize(m.size),
+                        type: fmTypeStr(m.type, m.subtype)
+                    };
+                    if (groupMap.has(entryName)) {
+                        groupMap.get(entryName).forEach(v => { if (!v.localPath) v.localPath = file.path; });
+                    } else if (groupMap.has(getBaseName(entryName))) {
+                        groupMap.get(getBaseName(entryName)).forEach(v => { if (!v.localPath) v.localPath = file.path; });
+                    } else {
+                        groupMap.set(entryName, [version]);
+                    }
+                }
+            } else {
+                const entryName = fm.name ? String(fm.name).trim() : baseName;
+                const version = {
+                    name: entryName,
+                    localPath: file.path,
+                    cr: fmCR(fm.cr),
+                    size: fmSize(fm.size),
+                    type: fmTypeStr(fm.type, fm.subtype)
+                };
+                if (groupMap.has(entryName)) {
+                    groupMap.get(entryName).forEach(v => { if (!v.localPath) v.localPath = file.path; });
+                } else if (groupMap.has(getBaseName(entryName))) {
+                    groupMap.get(getBaseName(entryName)).forEach(v => { if (!v.localPath) v.localPath = file.path; });
+                } else {
+                    groupMap.set(entryName, [version]);
+                }
             }
         }
 
@@ -741,7 +783,8 @@ class ScrollOfBeastsView extends ItemView {
                 const enc = encodeURIComponent(candidate);
                 const imgResp = await requestUrl({
                     url: `https://forgottenrealms.fandom.com/api.php?action=query` +
-                         `&titles=${enc}&prop=pageimages&pithumbsize=500&format=json&redirects=1`
+                         `&titles=${enc}&prop=pageimages&pithumbsize=500&format=json&redirects=1`,
+                    headers: { 'User-Agent': 'ScrollOfBeasts/1.0 (personal use; obsidian plugin)' }
                 });
                 const page = Object.values(imgResp.json?.query?.pages ?? {})[0];
                 if (page && !('missing' in page) && !('invalid' in page)) { imgPage = page; matchedName = candidate; break; }
@@ -755,7 +798,8 @@ class ScrollOfBeastsView extends ItemView {
             try {
                 const parseResp = await requestUrl({
                     url: `https://forgottenrealms.fandom.com/api.php?action=parse` +
-                         `&page=${encoded}&prop=text&format=json`
+                         `&page=${encoded}&prop=text&format=json`,
+                    headers: { 'User-Agent': 'ScrollOfBeasts/1.0 (personal use; obsidian plugin)' }
                 });
                 pageTitle = parseResp.json?.parse?.title ?? null;
                 const html = parseResp.json?.parse?.text?.['*'];
@@ -1609,9 +1653,10 @@ class ScrollOfBeastsView extends ItemView {
                     if (frData.pageUrl) {
                         const cite = loreSection.createEl("p", { cls: "fr-lore-cite" });
                         cite.createEl("span", { text: "Source: " });
-                        const citeLink = cite.createEl("a", { text: frData.pageTitle ?? "Forgotten Realms Wiki", href: frData.pageUrl });
+                        const citeLink = cite.createEl("a", { text: frData.pageTitle ?? name, href: frData.pageUrl });
                         citeLink.target = "_blank";
                         citeLink.rel = "noopener";
+                        cite.createEl("span", { text: " via Forgotten Realms Wiki (CC-BY-SA)" });
                     }
                 }
 
@@ -1643,6 +1688,26 @@ class ScrollOfBeastsView extends ItemView {
 }
 
 // ─── Settings Tab ─────────────────────────────────────────────────────────────
+class FolderSuggest extends AbstractInputSuggest {
+    constructor(app, inputEl, onSelect) {
+        super(app, inputEl);
+        this._onSelect = onSelect;
+    }
+    getSuggestions(query) {
+        const q = query.toLowerCase();
+        return (this.app.vault.getAllFolders?.() ?? [])
+            .map(f => f.path)
+            .filter(p => p && p.toLowerCase().includes(q))
+            .sort();
+    }
+    renderSuggestion(value, el) { el.setText(value); }
+    selectSuggestion(value) {
+        this.setValue(value);
+        if (this._onSelect) this._onSelect();
+        this.close();
+    }
+}
+
 class ScrollOfBeastsSettingTab extends PluginSettingTab {
     constructor(app, plugin) {
         super(app, plugin);
@@ -1658,7 +1723,11 @@ class ScrollOfBeastsSettingTab extends PluginSettingTab {
             .setHeading();
 
         containerEl.createEl('p', {
-            text: 'Vault paths to folders containing local monster notes (e.g. DnD/Common/Monsters). Optional — the 5e Statblocks bestiary is always included. The 5e Statblocks plugin must be installed and enabled.',
+            text: 'The Fantasy Statblocks plugin is required, and its 5e bestiary is included by default in the Scroll of Beasts.',
+            cls: 'setting-item-description'
+        });
+        containerEl.createEl('p', {
+            text: 'Optionally, add additional folders containing monster notes (e.g. DnD/Common/Monsters).',
             cls: 'setting-item-description'
         });
 
@@ -1668,15 +1737,50 @@ class ScrollOfBeastsSettingTab extends PluginSettingTab {
             folderListEl.empty();
 
             this.plugin.settings.monsterFolders.forEach((folder, index) => {
-                new Setting(folderListEl)
-                    .setName(`Folder ${index + 1}`)
-                    .addText(text => text
-                        .setPlaceholder('DnD/Common/Monsters')
-                        .setValue(folder)
-                        .onChange(async (value) => {
-                            this.plugin.settings.monsterFolders[index] = value;
-                            await this.plugin.saveSettings();
-                        }))
+                let textComp;
+                let confirmBtnEl;
+                const setConfirmActive = (active) => {
+                    if (!confirmBtnEl) return;
+                    confirmBtnEl.style.opacity = active ? '1' : '0.3';
+                    confirmBtnEl.style.pointerEvents = active ? '' : 'none';
+                    confirmBtnEl.style.cursor = active ? '' : 'default';
+                };
+                const s = new Setting(folderListEl)
+                    .addText(text => {
+                        textComp = text;
+                        text.setValue(folder);
+                        text.inputEl.addEventListener('input', () => setConfirmActive(true));
+                        text.inputEl.addEventListener('change', () => setConfirmActive(true));
+                        new FolderSuggest(this.app, text.inputEl, () => setConfirmActive(true));
+                        requestAnimationFrame(() => text.inputEl.blur());
+                    })
+                    .addButton(btn => {
+                        confirmBtnEl = btn.buttonEl;
+                        btn.setIcon('check')
+                            .setTooltip('Save folder')
+                            .onClick(async () => {
+                                const val = textComp.getValue().trim();
+                                this.plugin.settings.monsterFolders[index] = val;
+                                await this.plugin.saveSettings();
+                                setConfirmActive(false);
+                                s.nameEl.empty();
+                                if (val) {
+                                    s.nameEl.appendText(`Folder ${index + 1}: `);
+                                    s.nameEl.createEl('strong', { text: val });
+                                } else {
+                                    s.nameEl.setText(`Folder ${index + 1}`);
+                                }
+                            });
+                        setConfirmActive(false);
+                    });
+                s.nameEl.empty();
+                if (folder) {
+                    s.nameEl.appendText(`Folder ${index + 1}: `);
+                    s.nameEl.createEl('strong', { text: folder });
+                } else {
+                    s.nameEl.setText(`Folder ${index + 1}`);
+                }
+                s
                     .addButton(btn => btn
                         .setIcon('trash')
                         .setTooltip('Remove folder')
