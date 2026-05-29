@@ -1317,9 +1317,11 @@ class ScrollOfBeastsView extends ItemView {
                 }, 40);
             };
 
-            // Flavor text is re-rolled only when the result count changes, so a render that
-            // doesn't change the count (e.g. slider release at the same position) keeps it stable.
-            let lastTallyText = null, lastTotal = null;
+            // Flavor text is re-rolled only when the result *set* changes (not merely its count):
+            // a render landing on the same monsters (e.g. a slider release in place) keeps it
+            // stable, while a same-count-but-different-set change (e.g. switching alpha letters)
+            // still re-rolls and re-animates. `lastTotal` is retained for the slider's count-based skip.
+            let lastTallyText = null, lastTotal = null, lastSig = null;
             // Timestamp of the last animated (reveal) render — lets an in-flight reveal finish
             // before the slider-release fill-in rebuilds the list (so it isn't cut short).
             let lastAnimAt = 0;
@@ -1367,8 +1369,12 @@ class ScrollOfBeastsView extends ItemView {
                 // still reports the full count. allMonsters is sorted by baseName, so filtered
                 // preserves that order and the slice is the list's top.
                 const toRender = limit ? filtered.slice(0, limit) : filtered;
-                // Flavor text is re-rolled only when the count changes (stable otherwise).
-                const resultsChanged = total !== lastTotal;
+                // Result-set signature (ordered baseNames) — drives the flavor re-roll and reveal,
+                // so a same-count-but-different-set change (e.g. switching alpha letters) still
+                // updates the tally. allMonsters is unique by baseName, so the join is a faithful
+                // identity for the filtered set.
+                const sig = filtered.map(m => m.baseName).join('');
+                const resultsChanged = sig !== lastSig;
 
                 const grouped = {};
                 for (const m of toRender) {
@@ -1401,7 +1407,7 @@ class ScrollOfBeastsView extends ItemView {
 
                 let tallyText;
                 if (!resultsChanged && lastTallyText !== null) {
-                    tallyText = lastTallyText;   // count unchanged → keep the same flavor
+                    tallyText = lastTallyText;   // same result set → keep the same flavor
                 } else {
                     const flavorPool = total === 0
                         ? TALLY_FLAVORS.filter((_, i) => !TALLY_ZERO_SKIP.has(i))
@@ -1415,6 +1421,7 @@ class ScrollOfBeastsView extends ItemView {
                     }
                     lastTallyText = tallyText;
                     lastTotal = total;
+                    lastSig = sig;
                 }
                 const crFiltered = !!(searchTerm || selectedLetter || selectedBaseType || subtypeSearch || selectedSize);
                 const isFiltered = crFiltered || lowIdx !== 1 || highIdx !== CR_VALUES.length - 1;
