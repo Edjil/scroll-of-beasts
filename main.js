@@ -916,6 +916,7 @@ class ScrollOfBeastsView extends ItemView {
             const optStyle = "background:var(--background-primary); color:var(--text-normal);";
             const EM = '\u2298 ';
             const EM_PAD = '\u2007 '; // figure-space + space, same char-count as EM, close width
+            const allSubtypesOpt = `<option value="" style="${optStyle}">${EM_PAD}All Subtypes</option>`;
 
             // Search row
             const searchRow = wrapper.createEl("div");
@@ -989,7 +990,7 @@ class ScrollOfBeastsView extends ItemView {
                     ${typeOptHtml}
                 </select>
                 <select id="subtype-select" class="subtype-select" style="flex:1; display:none; ${selectStyle}">
-                    <option value="" style="${optStyle}">All Subtypes</option>
+                    ${allSubtypesOpt}
                 </select>
             `;
 
@@ -999,7 +1000,7 @@ class ScrollOfBeastsView extends ItemView {
             const subtypeIndicator = makeIndicator(filterRow, 'var(--background-primary)');
 
             const updateSubtypeOptions = (baseType) => {
-                subtypeSelect.innerHTML = `<option value="" style="${optStyle}">${EM_PAD}All Subtypes</option>`
+                subtypeSelect.innerHTML = allSubtypesOpt
                     + getSubtypes(baseType).map(st => `<option value="${st}" style="${optStyle}">${EM_PAD}${st.charAt(0).toUpperCase() + st.slice(1)}</option>`).join('');
             };
 
@@ -1508,7 +1509,7 @@ class ScrollOfBeastsView extends ItemView {
                     subtypeSelect.style.display = "block";
                 } else {
                     subtypeSelect.style.display = "none";
-                    subtypeSelect.innerHTML = `<option value="" style="${optStyle}">${EM_PAD}All Subtypes</option>`;
+                    subtypeSelect.innerHTML = allSubtypesOpt;
                 }
                 renderList();
             });
@@ -1533,7 +1534,7 @@ class ScrollOfBeastsView extends ItemView {
                 typeSelect.value = "";
                 subtypeSelect.value = "";
                 subtypeSelect.style.display = "none";
-                subtypeSelect.innerHTML = `<option value="" style="${optStyle}">${EM_PAD}All Subtypes</option>`;
+                subtypeSelect.innerHTML = allSubtypesOpt;
                 updateCRState();
                 renderAlpha();
                 renderList();
