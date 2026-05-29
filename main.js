@@ -466,31 +466,54 @@ class ScrollOfBeastsView extends ItemView {
             n => `Forgotten tongue yields ${n} ancient designation|designations`,
         ];
 
-        // ─── H1 rune transition ───────────────────────────────────────────────────────
-        const animateH1 = (h1El, targetText) => {
+        // ─── Rune transition (used by the H1 title and the result tally) ────────────────
+        const animateRuneText = (el, targetText, { hold = 250, flip = 400 } = {}) => {
             const chars = [...targetText];
             const runicIndices = chars.map((ch, i) => FUTHARK[ch.toLowerCase()] ? i : -1).filter(i => i !== -1);
-            if (!runicIndices.length) { h1El.textContent = targetText; return; }
-            h1El.textContent = '';
+            if (!runicIndices.length) { el.textContent = targetText; return; }
+            el.textContent = '';
             chars.forEach(ch => {
                 const span = document.createElement('span');
                 const rune = FUTHARK[ch.toLowerCase()];
                 span.textContent = rune || ch;
                 if (rune && isIOS) span.style.cssText = 'font-size:0.72em; vertical-align:0.12em;';
-                h1El.appendChild(span);
+                el.appendChild(span);
             });
-            const spans = Array.from(h1El.querySelectorAll('span'));
+            const spans = Array.from(el.querySelectorAll('span'));
             const shuffled = [...runicIndices];
             for (let i = shuffled.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
                 [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
             }
-            const RUNE_HOLD = 250, flipDuration = 400, n = Math.max(1, shuffled.length - 1);
+            const n = Math.max(1, shuffled.length - 1);
             shuffled.forEach((charIdx, flipIdx) => {
-                const t = RUNE_HOLD + Math.round(flipIdx / n * flipDuration);
+                const t = hold + Math.round(flipIdx / n * flip);
                 setTimeout(() => { spans[charIdx].textContent = chars[charIdx]; }, t);
             });
-            setTimeout(() => { h1El.textContent = targetText; }, RUNE_HOLD + flipDuration + 60);
+            setTimeout(() => { el.textContent = targetText; }, hold + flip + 60);
+        };
+        const animateH1 = (h1El, targetText) => animateRuneText(h1El, targetText);
+
+        // Numeric analogue of the rune flip: show each digit as a pentadic glyph, then resolve
+        // to the Arabic digit on the same staggered schedule. Settles to plain Arabic text.
+        const animatePentadicNumber = (el, numStr, { hold = 200, flip = 300 } = {}) => {
+            el.textContent = '';
+            const spans = [...numStr].map(d => {
+                const s = document.createElement('span');
+                s.innerHTML = crToPentadicSVG(d);
+                el.appendChild(s);
+                return s;
+            });
+            const order = spans.map((_, i) => i);
+            for (let i = order.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [order[i], order[j]] = [order[j], order[i]];
+            }
+            const n = Math.max(1, order.length - 1);
+            order.forEach((di, k) => {
+                setTimeout(() => { spans[di].textContent = numStr[di]; }, hold + Math.round(k / n * flip));
+            });
+            setTimeout(() => { el.textContent = numStr; }, hold + flip + 60);
         };
 
         // ─── Wrapper + scroll-to-top ──────────────────────────────────────────────────
@@ -672,6 +695,10 @@ class ScrollOfBeastsView extends ItemView {
         let selectedBaseType = null;
         let subtypeSearch = null;
         let selectedSize = null;
+
+        // Rows rendered per frame during a CR-slider scrub (a generous viewport-ful); the rest
+        // of the list is filled in once the drag settles.
+        const LIVE_RENDER_CAP = 100;
 
         // ─── Unified filter predicates ────────────────────────────────────────────────
         const filterPassesNonCR = (m, ov = {}) => {
@@ -1105,13 +1132,40 @@ class ScrollOfBeastsView extends ItemView {
                 return Math.round(ratio * (CR_VALUES.length - 1));
             };
 
+            // Shared across both handles: a deferred "fill in rows beyond the cap" render, held
+            // until any in-flight reveal finishes so releasing the slider doesn't cut it short.
+            let pendingFill = null;
+
             const makeDraggable = (handle, isLow) => {
+                // During a scrub we update the slider chrome (handles, labels, ticks) live, and
+                // rebuild a viewport-ful of rows only when the result set changes — animating that
+                // change in place, mid-drag. On release we fill in the rest of the list, plain.
+                let rafId = null, moved = false;
+                const scheduleRender = () => {
+                    if (rafId !== null) return;
+                    rafId = requestAnimationFrame(() => { rafId = null; renderList({ limit: LIVE_RENDER_CAP, skipIfUnchanged: true }); });
+                };
+                const endDrag = () => {
+                    if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+                    if (!moved) return;
+                    moved = false;
+                    // Fill in the rows beyond the cap, plain — but wait for any in-flight reveal to
+                    // finish first, so the rebuild swaps in identical settled text (and appends the
+                    // off-screen rows) instead of cutting the animation short.
+                    if (pendingFill) clearTimeout(pendingFill);
+                    const fill = () => { pendingFill = null; renderList({ animate: false }); };
+                    const remaining = REVEAL_MS - (performance.now() - lastAnimAt);
+                    if (remaining > 0) pendingFill = setTimeout(fill, remaining);
+                    else fill();
+                };
                 const onMove = (clientX) => {
+                    if (pendingFill) { clearTimeout(pendingFill); pendingFill = null; }
+                    moved = true;
                     let idx = getIdxFromClientX(clientX);
                     if (isLow) { lowIdx = idx; if (lowIdx > highIdx) highIdx = lowIdx; }
                     else        { highIdx = idx; if (highIdx < lowIdx) lowIdx = highIdx; }
                     updateCRState();
-                    renderList();
+                    scheduleRender();
                 };
                 handle.addEventListener("mousedown", (e) => {
                     e.preventDefault();
@@ -1121,6 +1175,7 @@ class ScrollOfBeastsView extends ItemView {
                         handle.style.cursor = "grab";
                         document.removeEventListener("mousemove", onMouseMove);
                         document.removeEventListener("mouseup", onMouseUp);
+                        endDrag();
                     };
                     document.addEventListener("mousemove", onMouseMove);
                     document.addEventListener("mouseup", onMouseUp);
@@ -1131,6 +1186,7 @@ class ScrollOfBeastsView extends ItemView {
                     const onTouchEnd = () => {
                         document.removeEventListener("touchmove", onTouchMove);
                         document.removeEventListener("touchend", onTouchEnd);
+                        endDrag();
                     };
                     document.addEventListener("touchmove", onTouchMove, { passive: false });
                     document.addEventListener("touchend", onTouchEnd);
@@ -1261,11 +1317,61 @@ class ScrollOfBeastsView extends ItemView {
                 }, 40);
             };
 
-            const renderList = () => {
+            // Flavor text is re-rolled only when the result count changes, so a render that
+            // doesn't change the count (e.g. slider release at the same position) keeps it stable.
+            let lastTallyText = null, lastTotal = null;
+            // Timestamp of the last animated (reveal) render — lets an in-flight reveal finish
+            // before the slider-release fill-in rebuilds the list (so it isn't cut short).
+            let lastAnimAt = 0;
+            const TALLY_REVEAL = { hold: 200, flip: 300 };   // tally rune/pentadic reveal timing
+            // Upper bound on the rune-reveal envelope (list + tally); must stay >= the tally
+            // envelope (TALLY_REVEAL.hold + .flip + 60) so a slider release doesn't clip it.
+            const REVEAL_MS = 580;
+
+            // Render a flavor sentence into `container`. When animating, the text segments
+            // rune-reveal and the count shows as pentadic glyphs that resolve to Arabic digits;
+            // when not animating it's plain text throughout. The zero-result phrasing has no
+            // digits, so it's handled as a single text run.
+            const renderTallyFlavor = (container, text, total, doAnimate) => {
+                const numStr = String(total);
+                const idx = total > 0 ? text.indexOf(numStr) : -1;
+                if (idx === -1) {
+                    if (doAnimate) animateRuneText(container, text, TALLY_REVEAL);
+                    else container.textContent = text;
+                    return;
+                }
+                const beforeEl = container.appendChild(document.createElement('span'));
+                const numEl = container.appendChild(document.createElement('span'));
+                const afterEl = container.appendChild(document.createElement('span'));
+                const before = text.slice(0, idx);
+                const after = text.slice(idx + numStr.length);
+                if (doAnimate) {
+                    animateRuneText(beforeEl, before, TALLY_REVEAL);
+                    animatePentadicNumber(numEl, numStr, TALLY_REVEAL);
+                    animateRuneText(afterEl, after, TALLY_REVEAL);
+                } else {
+                    beforeEl.textContent = before;
+                    numEl.textContent = numStr;
+                    afterEl.textContent = after;
+                }
+            };
+
+            const renderList = ({ animate = true, limit = null, skipIfUnchanged = false } = {}) => {
                 const filtered = allMonsters.filter(m => filterPasses(m));
+                const total = filtered.length;
+                // While scrubbing the slider, skip the (expensive) rebuild entirely when the result
+                // set is unchanged — this saves work AND keeps an in-flight reveal from being wiped
+                // by no-op frames. For a single CR handle, an unchanged count means an unchanged set.
+                if (skipIfUnchanged && total === lastTotal) return;
+                // During a scrub we build only the first `limit` rows (a viewport-ful); the tally
+                // still reports the full count. allMonsters is sorted by baseName, so filtered
+                // preserves that order and the slice is the list's top.
+                const toRender = limit ? filtered.slice(0, limit) : filtered;
+                // Flavor text is re-rolled only when the count changes (stable otherwise).
+                const resultsChanged = total !== lastTotal;
 
                 const grouped = {};
-                for (const m of filtered) {
+                for (const m of toRender) {
                     const letter = m.baseName[0].toUpperCase();
                     if (!grouped[letter]) grouped[letter] = [];
                     grouped[letter].push(m);
@@ -1293,21 +1399,41 @@ class ScrollOfBeastsView extends ItemView {
                 }
                 html += `<div aria-hidden="true" style="line-height:1em;">&nbsp;</div><div aria-hidden="true" style="line-height:1em;">&nbsp;</div>`;
 
-                const total = filtered.length;
-                const flavorPool = total === 0
-                    ? TALLY_FLAVORS.filter((_, i) => !TALLY_ZERO_SKIP.has(i))
-                    : TALLY_FLAVORS;
-                const tallyFlavor = flavorPool[Math.floor(Math.random() * flavorPool.length)];
                 let tallyText;
-                if (total === 0) {
-                    const s = pluralize(tallyFlavor(0), 0);
-                    tallyText = (s.startsWith('0') ? 'No' + s.slice(1) : s.replace('0', 'no')) + '.';
+                if (!resultsChanged && lastTallyText !== null) {
+                    tallyText = lastTallyText;   // count unchanged → keep the same flavor
                 } else {
-                    tallyText = pluralize(tallyFlavor(total), total) + '.';
+                    const flavorPool = total === 0
+                        ? TALLY_FLAVORS.filter((_, i) => !TALLY_ZERO_SKIP.has(i))
+                        : TALLY_FLAVORS;
+                    const tallyFlavor = flavorPool[Math.floor(Math.random() * flavorPool.length)];
+                    if (total === 0) {
+                        const s = pluralize(tallyFlavor(0), 0);
+                        tallyText = (s.startsWith('0') ? 'No' + s.slice(1) : s.replace('0', 'no')) + '.';
+                    } else {
+                        tallyText = pluralize(tallyFlavor(total), total) + '.';
+                    }
+                    lastTallyText = tallyText;
+                    lastTotal = total;
                 }
                 const crFiltered = !!(searchTerm || selectedLetter || selectedBaseType || subtypeSearch || selectedSize);
                 const isFiltered = crFiltered || lowIdx !== 1 || highIdx !== CR_VALUES.length - 1;
-                tallyEl.innerHTML = tallyText + (isFiltered ? ` <a id="monster-reset-btn" href="#" style="font-size:0.8em; white-space:nowrap; font-style:normal;">Reset all filters</a>` : "");
+                tallyEl.textContent = '';
+                const flavorSpan = document.createElement('span');
+                tallyEl.appendChild(flavorSpan);
+                // Rune-reveal the flavor text under the same rule as the list: only when results
+                // changed (and the caller is animating) — never on unchanged scrub frames or release.
+                // The count (if any) renders as per-digit pentadic glyphs (see renderTallyFlavor).
+                renderTallyFlavor(flavorSpan, tallyText, total, animate && resultsChanged);
+                if (isFiltered) {
+                    tallyEl.appendChild(document.createTextNode(' '));
+                    const resetLink = document.createElement('a');
+                    resetLink.id = 'monster-reset-btn';
+                    resetLink.href = '#';
+                    resetLink.style.cssText = 'font-size:0.8em; white-space:nowrap; font-style:normal;';
+                    resetLink.textContent = 'Reset all filters';
+                    tallyEl.appendChild(resetLink);
+                }
                 searchIndicator.style.display = searchTerm ? 'block' : 'none';
                 positionIndicator(filterIndicator,  typeSelect,    !!selectedBaseType);
                 positionIndicator(subtypeIndicator, subtypeSelect, !!subtypeSearch);
@@ -1316,8 +1442,10 @@ class ScrollOfBeastsView extends ItemView {
                 html += '</div>';
                 listContainer.innerHTML = html;
 
-                // [MAGIC SCROLL] — arcane reveal
-                requestAnimationFrame(() => {
+                // [MAGIC SCROLL] — arcane reveal. Caller-controlled via `animate`: scrub frames
+                // pass false (plain, fast); the settle render animates only when results changed.
+                if (animate) requestAnimationFrame(() => {
+                    lastAnimAt = performance.now();
                     const lis = Array.from(listContainer.querySelectorAll("li"));
                     if (!lis.length) return;
                     const vr = scrollEl ? scrollEl.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
@@ -1489,7 +1617,7 @@ class ScrollOfBeastsView extends ItemView {
                 const liveLetters = new Set(withoutLetterFilter.map(m => m.baseName[0].toUpperCase()));
                 const deadAlpha = new Set([...activeLetters].filter(l => !liveLetters.has(l)));
                 renderAlpha(deadAlpha);
-                if (!input.value && document.activeElement !== input) {
+                if (animate && !input.value && document.activeElement !== input) {
                     input.value = mobileQuery.matches ? SearchTextS : SearchTextL;
                     animateSearchClear(() => {});
                 }
@@ -1497,6 +1625,9 @@ class ScrollOfBeastsView extends ItemView {
 
             renderList();
 
+            // Full animated render per keystroke. Typing is low-frequency (vs. a 60fps slider
+            // scrub) and the dropdown dead-zones are now bucketed, so no windowing is needed —
+            // and a full render lets the reveal play to completion without being clipped.
             input.addEventListener("input", () => {
                 cancelSearchAnim();
                 searchTerm = input.value;
