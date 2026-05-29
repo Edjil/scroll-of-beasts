@@ -165,7 +165,7 @@ class ScrollOfBeastsView extends ItemView {
             const size = obj?.size?.toLowerCase().trim() ?? null;
             groupMap.get(baseName).push({ name, localPath, cr, type: typeStr, size });
             const baseNameLower = baseName.toLowerCase();
-            if (cr !== null && cr !== "" && !bestiaryCRMap.has(baseNameLower)) bestiaryCRMap.set(baseNameLower, cr);
+            if (cr !== null && !bestiaryCRMap.has(baseNameLower)) bestiaryCRMap.set(baseNameLower, cr);
         }
 
         const fmTypeStr = (type, subtype) => {
@@ -176,44 +176,29 @@ class ScrollOfBeastsView extends ItemView {
         const fmCR = (cr) => cr != null ? String(cr) : null;
         const fmSize = (size) => size ? String(size).toLowerCase().trim() : null;
 
+        // Attach a local note to an existing bestiary group (by exact or base name),
+        // or register it as a new local-only entry.
+        const addOrMergeLocal = (entryName, filePath, fields) => {
+            const existing = groupMap.get(entryName) ?? groupMap.get(getBaseName(entryName));
+            if (existing) {
+                existing.forEach(v => { if (!v.localPath) v.localPath = filePath; });
+            } else {
+                groupMap.set(entryName, [{ name: entryName, localPath: filePath, ...fields }]);
+            }
+        };
+
         for (const file of localFiles) {
             const baseName = file.basename;
             const fm = app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+            const sources = Array.isArray(fm.monsters) && fm.monsters.length > 0 ? fm.monsters : [fm];
 
-            if (Array.isArray(fm.monsters) && fm.monsters.length > 0) {
-                for (const m of fm.monsters) {
-                    const entryName = m.name ? String(m.name).trim() : baseName;
-                    const version = {
-                        name: entryName,
-                        localPath: file.path,
-                        cr: fmCR(m.cr),
-                        size: fmSize(m.size),
-                        type: fmTypeStr(m.type, m.subtype)
-                    };
-                    if (groupMap.has(entryName)) {
-                        groupMap.get(entryName).forEach(v => { if (!v.localPath) v.localPath = file.path; });
-                    } else if (groupMap.has(getBaseName(entryName))) {
-                        groupMap.get(getBaseName(entryName)).forEach(v => { if (!v.localPath) v.localPath = file.path; });
-                    } else {
-                        groupMap.set(entryName, [version]);
-                    }
-                }
-            } else {
-                const entryName = fm.name ? String(fm.name).trim() : baseName;
-                const version = {
-                    name: entryName,
-                    localPath: file.path,
-                    cr: fmCR(fm.cr),
-                    size: fmSize(fm.size),
-                    type: fmTypeStr(fm.type, fm.subtype)
-                };
-                if (groupMap.has(entryName)) {
-                    groupMap.get(entryName).forEach(v => { if (!v.localPath) v.localPath = file.path; });
-                } else if (groupMap.has(getBaseName(entryName))) {
-                    groupMap.get(getBaseName(entryName)).forEach(v => { if (!v.localPath) v.localPath = file.path; });
-                } else {
-                    groupMap.set(entryName, [version]);
-                }
+            for (const m of sources) {
+                const entryName = m.name ? String(m.name).trim() : baseName;
+                addOrMergeLocal(entryName, file.path, {
+                    cr: fmCR(m.cr),
+                    size: fmSize(m.size),
+                    type: fmTypeStr(m.type, m.subtype)
+                });
             }
         }
 
@@ -896,7 +881,6 @@ class ScrollOfBeastsView extends ItemView {
                 ? `https://forgottenrealms.fandom.com/wiki/${encodeURIComponent(pageTitle.replace(/ /g, '_'))}`
                 : null;
             const result = { imageUrl: imgPage.thumbnail?.source ?? null, lead, extract, pageTitle, pageUrl };
-            console.log('[Scroll of Beasts] FR data for', name, matchedName !== name ? `(via "${matchedName}")` : '', '— extract length:', result.extract?.length ?? 'null', '| imageUrl:', result.imageUrl);
             frCache.set(key, result);
             return result;
         };
