@@ -693,8 +693,6 @@ class ScrollOfBeastsView extends ItemView {
             return filterPassesNonCR(m, ov) && m.crNum >= CR_VALUES[li] && m.crNum <= CR_VALUES[hi];
         };
 
-        const countWith = (ov = {}) => allMonsters.filter(m => filterPasses(m, ov)).length;
-
         // ─── Scroll observer (shared by showList + showMonster) ───────────────────────
         const setupScrollObserver = (defer) => {
             if (upObserver) upObserver.disconnect();
@@ -1405,16 +1403,34 @@ class ScrollOfBeastsView extends ItemView {
                     const stripped = opt.textContent.replace(/^[\u2298\u2007] /, '');
                     opt.textContent = (zero ? EM : EM_PAD) + stripped;
                 };
-                Array.from(sizeSelect.options).forEach(opt => {
-                    markOption(opt, countWith({ selectedSize: opt.value }) === 0);
-                });
-                Array.from(typeSelect.options).forEach(opt => {
-                    markOption(opt, countWith({ selectedBaseType: opt.value, subtypeSearch: null }) === 0);
-                });
+                // Single-pass dead-zone buckets (one scan instead of ~36 per-option scans).
+                // Each query reuses filterPasses (single source of truth) with one override,
+                // then buckets by the monster's attribute. The '' ("All …") option uses the
+                // running total, matching the old "disable that filter" semantics.
+                const sizeBucket = new Map(); let sizeTotal = 0;
+                const typeBucket = new Map(); let typeTotal = 0;
+                const subBucket  = new Map(); let subTotal  = 0;
+                for (const m of allMonsters) {
+                    if (filterPasses(m, { selectedSize: null })) {
+                        sizeTotal++;
+                        sizeBucket.set(m.size, (sizeBucket.get(m.size) || 0) + 1);
+                    }
+                    if (filterPasses(m, { selectedBaseType: null, subtypeSearch: null })) {
+                        typeTotal++;
+                        typeBucket.set(m.baseType, (typeBucket.get(m.baseType) || 0) + 1);
+                    }
+                    if (selectedBaseType && filterPasses(m, { subtypeSearch: null })) {
+                        subTotal++;
+                        subBucket.set(m.subType, (subBucket.get(m.subType) || 0) + 1);
+                    }
+                }
+                const sizeDead = (v) => v === '' ? sizeTotal === 0 : !sizeBucket.get(v);
+                const typeDead = (v) => v === '' ? typeTotal === 0 : !typeBucket.get(v);
+                const subDead  = (v) => v === '' ? subTotal  === 0 : !subBucket.get(v);
+                Array.from(sizeSelect.options).forEach(opt => markOption(opt, sizeDead(opt.value)));
+                Array.from(typeSelect.options).forEach(opt => markOption(opt, typeDead(opt.value)));
                 if (selectedBaseType) {
-                    Array.from(subtypeSelect.options).forEach(opt => {
-                        markOption(opt, countWith({ subtypeSearch: opt.value }) === 0);
-                    });
+                    Array.from(subtypeSelect.options).forEach(opt => markOption(opt, subDead(opt.value)));
                 }
 
                 let liveCRNums;
