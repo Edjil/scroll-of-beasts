@@ -1106,6 +1106,45 @@ class ScrollOfBeastsView extends ItemView {
             const crLabelMobile = crDropWrap.querySelector("#cr-label");
             const crDropIndicator = makeIndicator(crDropWrap, 'var(--interactive-accent)');
 
+            // Render-state cache (declared before updateCRState so it can paint live). Drives the
+            // flavor re-roll / set-change detection and lets the CR ≥/≤ value colors repaint between
+            // full renders during a slider scrub. lastLiveByIdx stays valid across a drag because it
+            // depends only on the non-CR filters (which don't change mid-drag).
+            let lastTallyText = null, lastTotal = null, lastSig = null, lastLiveByIdx = null;
+
+            // Paint the CR ≥/≤ value colors (active/dead) and the mobile dropdown colors from a
+            // liveByIdx + total. Shared by renderList (source of truth) and updateCRState (so the
+            // colors track the handle live during a scrub, not just on the settle render).
+            const paintCRChrome = (liveByIdx, total) => {
+                const crColor = total > 0 ? 'var(--interactive-accent)' : 'var(--text-muted)';
+                const crFontStyle = total > 0 ? 'normal' : 'italic';
+                crLabelMobile.style.color = crColor;
+                crLabelMobile.style.fontStyle = crFontStyle;
+                Array.from(crDisplay.children).forEach(span => {
+                    span.style.color = crColor;
+                    span.style.fontStyle = crFontStyle;
+                });
+                const applyValueStyle = (strong, live) => {
+                    if (!strong) return;
+                    strong.style.color = live ? 'var(--interactive-accent)' : 'var(--text-muted)';
+                    strong.style.fontStyle = live ? 'normal' : 'italic';
+                };
+                applyValueStyle(crDisplay.querySelector('#cr-low-val'),  total === 0 ? false : liveByIdx[lowIdx]);
+                applyValueStyle(crDisplay.querySelector('#cr-high-val'), total === 0 ? false : liveByIdx[highIdx]);
+                const applyPrefixEM = (id, dead) => {
+                    const el = crDisplay.querySelector(id);
+                    if (el) el.style.visibility = dead ? 'visible' : 'hidden';
+                };
+                applyPrefixEM('#cr-low-prefix',  !liveByIdx[lowIdx]);
+                applyPrefixEM('#cr-high-prefix', !liveByIdx[highIdx]);
+                const setCRSelStyle = (sel, dead) => {
+                    sel.style.color = dead ? 'var(--text-muted)' : 'var(--link-color)';
+                    sel.style.fontStyle = dead ? 'italic' : 'normal';
+                };
+                setCRSelStyle(crMinSel, total === 0 || !liveByIdx[lowIdx]);
+                setCRSelStyle(crMaxSel, total === 0 || !liveByIdx[highIdx]);
+            };
+
             // --- Shared CR state ---
             const updateCRState = () => {
                 const lPct = getPercent(lowIdx);
@@ -1122,6 +1161,9 @@ class ScrollOfBeastsView extends ItemView {
                 const crChanged = lowIdx !== 1 || highIdx !== CR_VALUES.length - 1;
                 crIndicator.style.display = crChanged ? 'block' : 'none';
                 crDropIndicator.style.display = crChanged ? 'block' : 'none';
+                // Repaint ≥/≤ value colors live (cached liveByIdx is valid until a non-CR filter
+                // changes, which always triggers a full renderList that refreshes it).
+                if (lastLiveByIdx) paintCRChrome(lastLiveByIdx, lastTotal);
             };
             updateCRState();
 
@@ -1317,11 +1359,10 @@ class ScrollOfBeastsView extends ItemView {
                 }, 40);
             };
 
-            // Flavor text is re-rolled only when the result *set* changes (not merely its count):
-            // a render landing on the same monsters (e.g. a slider release in place) keeps it
-            // stable, while a same-count-but-different-set change (e.g. switching alpha letters)
-            // still re-rolls and re-animates. `lastTotal` is retained for the slider's count-based skip.
-            let lastTallyText = null, lastTotal = null, lastSig = null;
+            // lastTallyText / lastTotal / lastSig / lastLiveByIdx are declared above (before
+            // updateCRState). Flavor re-rolls only when the result *set* changes (lastSig), so a
+            // render landing on the same monsters keeps it stable; a same-count-but-different-set
+            // change still re-rolls. lastTotal is retained for the slider's count-based skip.
             // Timestamp of the last animated (reveal) render — lets an in-flight reveal finish
             // before the slider-release fill-in rebuilds the list (so it isn't cut short).
             let lastAnimAt = 0;
@@ -1582,41 +1623,16 @@ class ScrollOfBeastsView extends ItemView {
                 Array.from(crMinSel.options).forEach(opt => {
                     const idx = CR_LABELS.indexOf(opt.value.replace(/^gte:/, ''));
                     if (idx < 0) return;
-                    markOption(opt, total === 0 || !liveByIdx[idx]);
+                    markOption(opt, !liveByIdx[idx]);   // per-CR liveness only — matches the ticks
                 });
                 Array.from(crMaxSel.options).forEach(opt => {
                     const idx = CR_LABELS.indexOf(opt.value.replace(/^lte:/, ''));
                     if (idx < 0) return;
-                    markOption(opt, total === 0 || !liveByIdx[idx]);
+                    markOption(opt, !liveByIdx[idx]);   // per-CR liveness only — matches the ticks
                 });
 
-                const crColor = total > 0 ? 'var(--interactive-accent)' : 'var(--text-muted)';
-                const crFontStyle = total > 0 ? 'normal' : 'italic';
-                crLabelMobile.style.color = crColor;
-                crLabelMobile.style.fontStyle = crFontStyle;
-                Array.from(crDisplay.children).forEach(span => {
-                    span.style.color = crColor;
-                    span.style.fontStyle = crFontStyle;
-                });
-                const applyValueStyle = (strong, live) => {
-                    if (!strong) return;
-                    strong.style.color = live ? 'var(--interactive-accent)' : 'var(--text-muted)';
-                    strong.style.fontStyle = live ? 'normal' : 'italic';
-                };
-                applyValueStyle(crDisplay.querySelector('#cr-low-val'),  total === 0 ? false : liveByIdx[lowIdx]);
-                applyValueStyle(crDisplay.querySelector('#cr-high-val'), total === 0 ? false : liveByIdx[highIdx]);
-                const applyPrefixEM = (id, dead) => {
-                    const el = crDisplay.querySelector(id);
-                    if (el) el.style.visibility = dead ? 'visible' : 'hidden';
-                };
-                applyPrefixEM('#cr-low-prefix',  !liveByIdx[lowIdx]);
-                applyPrefixEM('#cr-high-prefix', !liveByIdx[highIdx]);
-                const setCRSelStyle = (sel, dead) => {
-                    sel.style.color = dead ? 'var(--text-muted)' : 'var(--link-color)';
-                    sel.style.fontStyle = dead ? 'italic' : 'normal';
-                };
-                setCRSelStyle(crMinSel, total === 0 || !liveByIdx[lowIdx]);
-                setCRSelStyle(crMaxSel, total === 0 || !liveByIdx[highIdx]);
+                paintCRChrome(liveByIdx, total);
+                lastLiveByIdx = liveByIdx;   // cache for live repaint by updateCRState during a scrub
 
                 const withoutLetterFilter = selectedLetter
                     ? allMonsters.filter(m => filterPasses(m, { selectedLetter: null }))
