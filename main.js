@@ -537,7 +537,6 @@ class ScrollOfBeastsView extends ItemView {
         const isIOS = app.isMobile && /iPhone|iPad|iPod/.test(navigator.userAgent);
 
         // ─── Floating scroll-to-top button ────────────────────────────────────────────
-        const ourLeafEl = view.leaf.containerEl;
         const upBtn = document.body.createEl("button");
         upBtn.style.cssText = "position:fixed; bottom:80px; width:44px; height:44px; border-radius:50%; background:var(--interactive-accent); color:var(--text-on-accent); border:none; cursor:pointer; display:none; align-items:center; justify-content:center; z-index:100; box-shadow:0 2px 8px rgba(0,0,0,0.3);";
         const upSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -788,7 +787,7 @@ class ScrollOfBeastsView extends ItemView {
             const candidates = scFirst !== normalized
                 ? [scFirst, normalized, ...frFallbackNames(normalized).filter(c => c !== scFirst)]
                 : [normalized, ...frFallbackNames(normalized)];
-            let imgPage = null, matchedName = null;
+            let imgPage = null;
             for (const candidate of candidates) {
                 const enc = encodeURIComponent(candidate);
                 const imgResp = await requestUrl({
@@ -797,7 +796,7 @@ class ScrollOfBeastsView extends ItemView {
                     headers: { 'User-Agent': 'ScrollOfBeasts/1.0 (personal use; obsidian plugin)' }
                 });
                 const page = Object.values(imgResp.json?.query?.pages ?? {})[0];
-                if (page && !('missing' in page) && !('invalid' in page)) { imgPage = page; matchedName = candidate; break; }
+                if (page && !('missing' in page) && !('invalid' in page)) { imgPage = page; break; }
             }
             if (!imgPage) { frCache.set(key, null); return null; }
 
