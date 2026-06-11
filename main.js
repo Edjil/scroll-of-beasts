@@ -131,7 +131,7 @@ class ScrollOfBeastsView extends ItemView {
                     return svgWrap(inner, totalW.toFixed(1), H);
                 }
                 const n = parseInt(cr);
-                if (isNaN(n)) return `(CR ${cr})`;
+                if (isNaN(n)) return `(CR ${esc(cr)})`;   // esc: this string is consumed via innerHTML
                 return svgWrap(numeralInner(n), W, H);
             };
         })();
@@ -360,8 +360,9 @@ class ScrollOfBeastsView extends ItemView {
             y:'ᛃ', z:'ᛉ'
         };
 
-        // ─── HTML escape helper ───────────────────────────────────────────────────────
-        const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+        // ─── HTML escape helper (text + double-quoted attribute contexts) ─────────────
+        const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
         // ─── Tally flavor phrases ─────────────────────────────────────────────────────
         const TALLY_ZERO_SKIP = new Set([11, 13, 15, 35, 75, 82, 89, 97]);
@@ -539,6 +540,7 @@ class ScrollOfBeastsView extends ItemView {
         };
 
         // ─── Mobile breakpoint ────────────────────────────────────────────────────────
+        // Must stay in sync with the @media (max-width: 600px) query in styles.css.
         const MOBILE_BREAKPOINT = 600;
         const mobileQuery = window.matchMedia(`(max-width:${MOBILE_BREAKPOINT}px)`);
         const isIOS = app.isMobile && /iPhone|iPad|iPod/.test(navigator.userAgent);
@@ -577,117 +579,21 @@ class ScrollOfBeastsView extends ItemView {
             upBtn.style.right = (window.innerWidth - rect.right + rightPad) + "px";
         };
 
-        app.workspace.on("active-leaf-change", onLeafChange);
-        app.workspace.on("layout-change", onLayoutChange);
-        window.addEventListener("resize", positionUpBtn);
-
-        // ─── CSS ──────────────────────────────────────────────────────────────────────
-        const crStyle = document.createElement('style');
-        document.head.appendChild(crStyle);
-        crStyle.textContent = `
-            .scroll-of-beasts-view {
-                font-size: var(--font-text-size, 16px);
-                line-height: var(--line-height-normal, 1.5);
-                max-width: var(--file-line-width, 700px);
-                margin: 0 auto;
-                padding: 10px 20px 120px;
-                box-sizing: border-box;
-                overflow-y: auto;
-                height: 100%;
-            }
-            .scroll-of-beasts-view .markdown-preview-view { overflow: visible !important; height: auto !important; }
-            .cr-slider-wrap { display:block; }
-            .cr-dropdown-wrap { display:none; }
-            .monster-tally, .monster-list { padding: 0 28px 0 20px; box-sizing:border-box; }
-            @media (max-width: ${MOBILE_BREAKPOINT}px) {
-                .cr-slider-wrap { display:none !important; }
-                .cr-dropdown-wrap { display:flex !important; }
-                #monster-search { font-size: 0.9em; }
-                .monster-tally, .monster-list { padding: 0 4px; }
-                .cr-label-center { display:none; }
-                .subtype-select { flex-basis: 100% !important; }
-                .scroll-of-beasts-view { padding-bottom: max(180px, calc(env(safe-area-inset-bottom, 0px) + 140px)); }
-            }
-            #monster-search:focus {
-                outline: none;
-                border-color: var(--interactive-accent);
-            }
-            #size-select:focus, #type-select:focus, .subtype-select:focus {
-                outline: none;
-                box-shadow: none;
-                -webkit-appearance: none;
-                appearance: none;
-            }
-            .fr-lead { margin-bottom: 12px; line-height: 1.6; font-style: italic; color: var(--text-muted); }
-            .fr-panel .markdown-preview-view { padding: 0; }
-            .fr-panel .markdown-preview-view img { width: 95%; display: block; margin: 0 auto; border-radius: 6px; }
-            .fr-lead p { margin-bottom: 0.5em; }
-            .fr-tab-bar {
-                display: flex;
-                gap: 4px;
-                margin-bottom: 8px;
-                border-bottom: 1px solid var(--background-modifier-border);
-                padding-bottom: 4px;
-            }
-            .fr-tab {
-                background: none;
-                border: none;
-                border-bottom: 2px solid transparent;
-                padding: 4px 12px;
-                margin-bottom: -5px;
-                cursor: pointer;
-                color: var(--text-muted);
-                font-size: 0.9em;
-            }
-            .fr-tab:hover { color: var(--text-normal); }
-            .fr-tab-active {
-                color: var(--interactive-accent);
-                border-bottom-color: var(--interactive-accent);
-                font-weight: 600;
-            }
-            .fr-lore {
-                margin-top: 16px;
-                padding-top: 12px;
-                border-top: 1px solid var(--background-modifier-border);
-            }
-            .fr-lore-text p { margin-bottom: 0.75em; line-height: 1.6; }
-            .fr-lore-text figure { margin: 1em 0; }
-            .fr-lore-text figure img { max-width: 100%; border-radius: 4px; display: block; }
-            .fr-lore-text figcaption { font-size: 0.8em; color: var(--text-muted); font-style: italic; margin-top: 4px; }
-            .fr-lore-text figcaption p { margin: 0; }
-            .fr-lore-text h2 { font-size: 1.1em; font-weight: 700; margin: 1.2em 0 0.4em; border-bottom: 1px solid var(--background-modifier-border); padding-bottom: 2px; }
-            .fr-lore-text h3 { font-size: 1em; font-weight: 700; margin: 1em 0 0.3em; }
-            .fr-lore-text h4 { font-size: 0.95em; font-weight: 600; margin: 0.8em 0 0.3em; }
-            .fr-lore-text ul, .fr-lore-text ol { margin: 0.5em 0 0.75em 1.5em; }
-            .fr-lore-text li { margin-bottom: 0.25em; line-height: 1.6; }
-            .fr-lore-text a { color: var(--link-color); text-decoration: underline; }
-            .fr-lore-text a:hover { color: var(--link-color-hover); }
-            .fr-lore-cite {
-                margin-top: 1.2em;
-                padding-top: 0.6em;
-                border-top: 1px solid var(--background-modifier-border);
-                font-size: 0.8em;
-                color: var(--text-muted);
-            }
-            .fr-lore-cite a { color: var(--text-muted); text-decoration: underline; }
-            .fr-lore-cite a:hover { color: var(--text-normal); }
-            .fr-lore-loading, .fr-lore-missing {
-                color: var(--text-muted);
-                font-style: italic;
-                font-size: 0.875em;
-            }
-        `;
+        view.registerEvent(app.workspace.on("active-leaf-change", onLeafChange));
+        view.registerEvent(app.workspace.on("layout-change", onLayoutChange));
+        view.registerDomEvent(window, "resize", positionUpBtn);
 
         // ─── Cleanup ──────────────────────────────────────────────────────────────────
+        // Workspace/window listeners are view-registered (auto-removed on close); this handles
+        // what needs manual teardown: body-level DOM, the swappable scroll observer, the
+        // mobileQuery handlers (re-registered per showList), and the deferred slider fill.
         let upObserver = null;
         let mqSizeHandler = null;
         let mqPlaceholderHandler = null;
+        let pendingFill = null;
         view._doCleanup = () => {
             upBtn.remove();
-            crStyle.remove();
-            app.workspace.off("active-leaf-change", onLeafChange);
-            app.workspace.off("layout-change", onLayoutChange);
-            window.removeEventListener("resize", positionUpBtn);
+            if (pendingFill) { clearTimeout(pendingFill); pendingFill = null; }
             if (upObserver) { upObserver.disconnect(); upObserver = null; }
             if (mqSizeHandler) { mobileQuery.removeEventListener("change", mqSizeHandler); mqSizeHandler = null; }
             if (mqPlaceholderHandler) { mobileQuery.removeEventListener("change", mqPlaceholderHandler); mqPlaceholderHandler = null; }
@@ -848,6 +754,17 @@ class ScrollOfBeastsView extends ItemView {
                         a.target = '_blank';
                         a.rel = 'noopener';
                     });
+                    // Sanitize remote HTML before it's carried into innerHTML: drop inline event
+                    // handlers and any URL attribute that isn't http(s) (javascript:, data:, or
+                    // relative leftovers). Runs after the link rewrite so internal links survive.
+                    contentRoot.querySelectorAll('*').forEach(el => {
+                        for (const attr of Array.from(el.attributes)) {
+                            const an = attr.name.toLowerCase();
+                            if (an.startsWith('on')) el.removeAttribute(attr.name);
+                            else if ((an === 'href' || an === 'src' || an === 'srcset') && !/^https?:/i.test(attr.value.trim()))
+                                el.removeAttribute(attr.name);
+                        }
+                    });
                     // Walk children once: collect lead (before first H2) and sections (first H2 → Appendix)
                     const STOP_SECTIONS = new Set(['appendix', 'references', 'external links', 'further reading', 'gallery', 'notes', 'index', 'see also']);
                     const children = Array.from(contentRoot.children);
@@ -954,7 +871,7 @@ class ScrollOfBeastsView extends ItemView {
             searchRow.style = "display:flex; gap:8px; margin-top:20px; margin-bottom:8px; align-items:center; padding:0 4px 0 0; box-sizing:border-box; width:100%;";
             const sizeOptHtml = [
                 `<option value="" style="${optStyle}">${EM_PAD}All Sizes</option>`,
-                ...allSizes.map(s => `<option value="${s}" style="${optStyle}">${EM_PAD}${s.charAt(0).toUpperCase() + s.slice(1)}</option>`)
+                ...allSizes.map(s => `<option value="${esc(s)}" style="${optStyle}">${EM_PAD}${esc(s.charAt(0).toUpperCase() + s.slice(1))}</option>`)
             ].join('');
             searchRow.innerHTML = `
                 <div style="position:relative; flex:1; display:flex; align-items:center;">
@@ -1013,7 +930,7 @@ class ScrollOfBeastsView extends ItemView {
 
             const typeOptHtml = [
                 `<option value="" style="${optStyle}">${EM_PAD}All Types</option>`,
-                ...allBaseTypes.map(t => `<option value="${t}" style="${optStyle}">${EM_PAD}${t.charAt(0).toUpperCase() + t.slice(1)}</option>`)
+                ...allBaseTypes.map(t => `<option value="${esc(t)}" style="${optStyle}">${EM_PAD}${esc(t.charAt(0).toUpperCase() + t.slice(1))}</option>`)
             ].join('');
 
             filterRow.innerHTML = `
@@ -1032,7 +949,7 @@ class ScrollOfBeastsView extends ItemView {
 
             const updateSubtypeOptions = (baseType) => {
                 subtypeSelect.innerHTML = allSubtypesOpt
-                    + getSubtypes(baseType).map(st => `<option value="${st}" style="${optStyle}">${EM_PAD}${st.charAt(0).toUpperCase() + st.slice(1)}</option>`).join('');
+                    + getSubtypes(baseType).map(st => `<option value="${esc(st)}" style="${optStyle}">${EM_PAD}${esc(st.charAt(0).toUpperCase() + st.slice(1))}</option>`).join('');
             };
 
             typeSelect.value = selectedBaseType ?? "";
@@ -1180,10 +1097,9 @@ class ScrollOfBeastsView extends ItemView {
                 return Math.round(ratio * (CR_VALUES.length - 1));
             };
 
-            // Shared across both handles: a deferred "fill in rows beyond the cap" render, held
-            // until any in-flight reveal finishes so releasing the slider doesn't cut it short.
-            let pendingFill = null;
-
+            // pendingFill (declared at cleanup scope so teardown can cancel it) holds the deferred
+            // "fill in rows beyond the cap" render, shared across both handles and held until any
+            // in-flight reveal finishes so releasing the slider doesn't cut it short.
             const makeDraggable = (handle, isLow) => {
                 // During a scrub we update the slider chrome (handles, labels, ticks) live, and
                 // rebuild a viewport-ful of rows only when the result set changes — animating that
@@ -1436,16 +1352,16 @@ class ScrollOfBeastsView extends ItemView {
                 for (const letter of Object.keys(grouped).sort()) {
                     html += `<div class="toc-section"><h2 class="toc-letter">${letter}</h2><ul class="toc-list">`;
                     for (const m of grouped[letter]) {
-                        const crLabel = ` <span class="cr-label" data-cr="${m.cr || 'N/A'}" style="color:var(--text-muted);font-size:0.7em">(CR ${formatCR(m.cr)})</span>`;
+                        const crLabel = ` <span class="cr-label" data-cr="${esc(m.cr || 'N/A')}" style="color:var(--text-muted);font-size:0.7em">(CR ${esc(formatCR(m.cr))})</span>`;
                         let mainLinks, detailLink = "";
                         if (m.localOnly) {
-                            mainLinks = `<a class="monster-link" data-path="${m.localPath}" data-name="${m.baseName}" data-type="local" href="#">${m.baseName}</a>`;
+                            mainLinks = `<a class="monster-link" data-path="${esc(m.localPath)}" data-name="${esc(m.baseName)}" data-type="local" href="#">${esc(m.baseName)}</a>`;
                         } else {
                             mainLinks = m.versions.map(v =>
-                                `<a class="monster-link" data-name="${v.name}" data-type="bestiary" href="#">${v.name}</a>`
+                                `<a class="monster-link" data-name="${esc(v.name)}" data-type="bestiary" href="#">${esc(v.name)}</a>`
                             ).join('<span class="ml-sep"> / </span>');
                             detailLink = m.localPath
-                                ? ` <span style="color:var(--text-muted)">(<a class="monster-link" data-path="${m.localPath}" data-name="${m.baseName}" data-type="local" href="#">More details...</a>)</span>`
+                                ? ` <span style="color:var(--text-muted)">(<a class="monster-link" data-path="${esc(m.localPath)}" data-name="${esc(m.baseName)}" data-type="local" href="#">More details...</a>)</span>`
                                 : "";
                         }
                         html += `<li>${mainLinks}${crLabel}${detailLink}</li>`;
@@ -1999,10 +1915,6 @@ class ScrollOfBeastsPlugin extends Plugin {
         });
 
         this.addSettingTab(new ScrollOfBeastsSettingTab(this.app, this));
-    }
-
-    onunload() {
-        this.app.workspace.detachLeavesOfType(VIEW_TYPE);
     }
 
     async activateView() {
