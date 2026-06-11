@@ -176,14 +176,21 @@ class ScrollOfBeastsView extends ItemView {
         const fmCR = (cr) => cr != null ? String(cr) : null;
         const fmSize = (size) => size ? String(size).toLowerCase().trim() : null;
 
-        // Attach a local note to an existing bestiary group (by exact or base name),
-        // or register it as a new local-only entry.
+        // Case-insensitive index into groupMap (whose keys keep their original bestiary case).
+        const groupKeyByLower = new Map();
+        for (const key of groupMap.keys()) groupKeyByLower.set(key.toLowerCase(), key);
+
+        // Attach a local note to an existing bestiary group (by exact or base name,
+        // case-insensitive), or register it as a new local-only entry.
         const addOrMergeLocal = (entryName, filePath, fields) => {
-            const existing = groupMap.get(entryName) ?? groupMap.get(getBaseName(entryName));
+            const existingKey = groupKeyByLower.get(entryName.toLowerCase())
+                ?? groupKeyByLower.get(getBaseName(entryName).toLowerCase());
+            const existing = existingKey != null ? groupMap.get(existingKey) : null;
             if (existing) {
                 existing.forEach(v => { if (!v.localPath) v.localPath = filePath; });
             } else {
                 groupMap.set(entryName, [{ name: entryName, localPath: filePath, ...fields }]);
+                groupKeyByLower.set(entryName.toLowerCase(), entryName);
             }
         };
 
@@ -1227,10 +1234,12 @@ class ScrollOfBeastsView extends ItemView {
                     const onTouchEnd = () => {
                         document.removeEventListener("touchmove", onTouchMove);
                         document.removeEventListener("touchend", onTouchEnd);
+                        document.removeEventListener("touchcancel", onTouchEnd);
                         endDrag();
                     };
                     document.addEventListener("touchmove", onTouchMove, { passive: false });
                     document.addEventListener("touchend", onTouchEnd);
+                    document.addEventListener("touchcancel", onTouchEnd);
                 }, { passive: false });
             };
             makeDraggable(lowHandle, true);
