@@ -14,7 +14,7 @@ An [Obsidian](https://obsidian.md) plugin for browsing D&D5e monster statblocks.
 
 ## Requirements
 
-- [Fantasy Statblocks](https://github.com/javalent/fantasy-statblocks) plugin installed and populated with monster data
+- [Fantasy Statblocks](https://github.com/javalent/fantasy-statblocks) plugin installed and populated with monster data — Scroll of Beasts reads its bestiary directly and renders statblocks through it. Without it, only local monster notes will appear.
 
 ## Installation via BRAT
 
@@ -25,9 +25,9 @@ An [Obsidian](https://obsidian.md) plugin for browsing D&D5e monster statblocks.
 
 ## Manual installation
 
-1. Download `main.js` and `manifest.json` from this repository
+1. Download `main.js`, `manifest.json`, and `styles.css` from this repository
 2. Create a folder `.obsidian/plugins/scroll-of-beasts/` in your vault
-3. Copy both files into that folder
+3. Copy all three files into that folder
 4. Reload Obsidian and enable the plugin in Settings → Community Plugins
 
 ## Monster folders configuration
@@ -69,6 +69,14 @@ Notes without frontmatter still appear in the folder link list but show N/A for 
 
 1. In Scroll of Beasts plugin settings, check the box to Fetch lore & image from Forgotten Realms wiki
 2. The free FR wiki will provide information for discovered beasts
+
+Wiki text and images are reproduced under [CC-BY-SA](https://creativecommons.org/licenses/by-sa/3.0/), with a source link shown beneath each article.
+
+## Network use & privacy
+
+- **By default, the plugin makes no network requests.** Everything works offline from your vault and the Fantasy Statblocks bestiary.
+- With the optional Forgotten Realms wiki setting enabled, opening a bestiary creature sends requests to `forgottenrealms.fandom.com` (the public MediaWiki API) to fetch that creature's article text and image. The only data sent is the creature's name; responses are cached for the session.
+- The plugin collects no telemetry and sends no other data anywhere.
 
 
 
