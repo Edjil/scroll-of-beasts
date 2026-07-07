@@ -32,6 +32,13 @@ class ScrollOfBeastsView extends ItemView {
     async onOpen() {
         const view = this;
         const app = this.app;
+        // Startup guard: a restored view can open at app launch before Fantasy
+        // Statblocks has loaded (the leaf persists across restarts), which would make
+        // the bestiary read below come up empty. onLayoutReady resolves immediately
+        // once the workspace is up, so post-startup opens don't wait.
+        if (!app.plugins.plugins['obsidian-5e-statblocks']) {
+            await new Promise(resolve => app.workspace.onLayoutReady(resolve));
+        }
         this.contentEl.empty();
 
         // ─── Title strings ────────────────────────────────────────────────────────────
@@ -658,8 +665,8 @@ class ScrollOfBeastsView extends ItemView {
         const frCache = new Map();
 
         // Returns ordered fallback lookup names when the primary name has no wiki page.
-        // Strips edition tags, trailing variant qualifiers, age prefixes, and "Swarm of".
-        // Input is already normalized (no [5.5e]). Returns ordered fallback names to try.
+        // Strips trailing variant qualifiers, age prefixes, and "Swarm of".
+        // Input is already normalized (no [...] tags). Returns ordered fallback names to try.
         // FR wiki uses sentence case ("Black dragon"), so each candidate is also tried in
         // sentence case (first char upper, rest lower) to catch the common casing mismatch.
         const frFallbackNames = (name) => {
@@ -694,8 +701,9 @@ class ScrollOfBeastsView extends ItemView {
             const key = name.toLowerCase();
             if (frCache.has(key)) return frCache.get(key);
 
-            // Strip edition tags that are never valid wiki titles, then try fallbacks
-            const normalized = name.replace(/\s*\[5\.5e\]/gi, '').trim();
+            // Strip [tags] (variant/edition markers like [Elite], [5.5e]) — never valid
+            // wiki titles — then try fallbacks
+            const normalized = name.replace(/\s*\[[^\]]*\]/g, '').trim();
             const scFirst = normalized.charAt(0).toUpperCase() + normalized.slice(1).toLowerCase();
             const candidates = scFirst !== normalized
                 ? [scFirst, normalized, ...frFallbackNames(normalized).filter(c => c !== scFirst)]
@@ -828,7 +836,12 @@ class ScrollOfBeastsView extends ItemView {
             const pageUrl = pageTitle
                 ? `https://forgottenrealms.fandom.com/wiki/${encodeURIComponent(pageTitle.replace(/ /g, '_'))}`
                 : null;
-            const result = { imageUrl: imgPage.thumbnail?.source ?? null, lead, extract, pageTitle, pageUrl };
+            // The thumbnail URL is interpolated into a statblock YAML string and a
+            // markdown image — accept only a clean absolute http(s) URL (no whitespace,
+            // quotes, backticks, or backslashes that could break out of either context).
+            const rawImg = imgPage.thumbnail?.source ?? null;
+            const imageUrl = rawImg && /^https?:\/\/[^\s"`\\]+$/.test(rawImg) ? rawImg : null;
+            const result = { imageUrl, lead, extract, pageTitle, pageUrl };
             frCache.set(key, result);
             return result;
         };
